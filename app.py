@@ -1277,7 +1277,7 @@ with gr.Blocks(title="FNOL Document Processing Flow", theme=gr.themes.Soft()) as
 if __name__ == "__main__":
     # User authentication credentials
     auth_users = [
-        ("admin", "password")
+        ("admin", "password"),
         ("bader.alghunaim", "Bd2k9$mQ"),
         ("abdullah.alasfoor", "Ab7x3!pL"),
         ("mishal.almana", "Mh4s6#nR"),
