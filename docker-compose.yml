@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  claim-processing-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gig-kwt-claim-processing
+    ports:
+      - "${PORT:-7860}:7860"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - PORT=${PORT:-7860}
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      # Optional: Mount for logs or persistent data
+      - ./logs:/app/logs
+    networks:
+      - claim-processing-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:7860')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+networks:
+  claim-processing-network:
+    driver: bridge
