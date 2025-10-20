@@ -24,7 +24,7 @@ This guide explains how to build and run the GIG Kuwait Claim Processing applica
    ```
 
 3. **Access the application**
-   Open your browser and navigate to: `http://localhost:7860`
+   Open your browser and navigate to: `http://localhost:8080`
 
 4. **Stop the application**
    ```bash
@@ -42,13 +42,13 @@ This guide explains how to build and run the GIG Kuwait Claim Processing applica
    ```bash
    docker run -d \
      --name claim-processing-app \
-     -p 7860:7860 \
+     -p 8080:8080 \
      -e GEMINI_API_KEY=your_api_key_here \
      gig-kwt-claim-processing
    ```
 
 3. **Access the application**
-   Open your browser and navigate to: `http://localhost:7860`
+   Open your browser and navigate to: `http://localhost:8080`
 
 4. **Stop the container**
    ```bash
@@ -63,21 +63,21 @@ This guide explains how to build and run the GIG Kuwait Claim Processing applica
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `GEMINI_API_KEY` | Google Gemini API key (required) | - |
-| `PORT` | Application port | 7860 |
+| `PORT` | Application port | 8080 |
 
 ### Port Mapping
 
-By default, the application runs on port 7860. You can change this by:
+By default, the application runs on port 8080. You can change this by:
 
 **Docker Compose:**
 ```yaml
 ports:
-  - "8080:7860"  # Maps host port 8080 to container port 7860
+  - "9000:8080"  # Maps host port 9000 to container port 8080
 ```
 
 **Docker CLI:**
 ```bash
-docker run -p 8080:7860 gig-kwt-claim-processing
+docker run -p 9000:8080 gig-kwt-claim-processing
 ```
 
 ## Monitoring
@@ -147,7 +147,7 @@ server {
     ssl_certificate_key /path/to/key.pem;
 
     location / {
-        proxy_pass http://localhost:7860;
+        proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -182,9 +182,9 @@ docker-compose --env-file .env.production up -d
    docker-compose config
    ```
 
-3. Ensure port 7860 is not already in use:
+3. Ensure port 8080 is not already in use:
    ```bash
-   netstat -tuln | grep 7860
+   netstat -tuln | grep 8080
    ```
 
 ### Application errors
