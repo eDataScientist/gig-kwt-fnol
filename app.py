@@ -6,6 +6,9 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple, Dict, Any
 import io
+import base64
+import uuid
+import time
 from PIL import Image, ImageDraw
 import pdfplumber
 from google.genai import types, client
@@ -516,7 +519,47 @@ class DocumentProcessor:
 processor = DocumentProcessor()
 
 
-def send_webhook_log(flow_type: str, username: str, result_data: dict):
+def convert_images_to_base64(images: List[Image.Image]) -> List[dict]:
+    """
+    Convert PIL Images to base64 encoded strings
+
+    Args:
+        images: List of PIL Image objects
+
+    Returns:
+        List of dictionaries with image metadata and base64 data
+    """
+    base64_images = []
+
+    for idx, img in enumerate(images):
+        try:
+            # Convert PIL Image to bytes
+            img_byte_arr = io.BytesIO()
+            img_format = img.format if img.format else 'PNG'
+            img.save(img_byte_arr, format=img_format)
+            img_bytes = img_byte_arr.getvalue()
+
+            # Encode to base64
+            base64_encoded = base64.b64encode(img_bytes).decode('utf-8')
+
+            base64_images.append({
+                "index": idx,
+                "format": img_format,
+                "width": img.width,
+                "height": img.height,
+                "base64": base64_encoded
+            })
+        except Exception as e:
+            print(f"Error converting image {idx} to base64: {e}")
+            base64_images.append({
+                "index": idx,
+                "error": str(e)
+            })
+
+    return base64_images
+
+
+def send_webhook_log(flow_type: str, username: str, result_data: dict, images: List[Image.Image] = None, time_taken: float = None):
     """
     Send processing log to n8n webhook
 
@@ -524,23 +567,37 @@ def send_webhook_log(flow_type: str, username: str, result_data: dict):
         flow_type: Either "windshield" or "accident"
         username: The authenticated username
         result_data: The complete JSON results from processing
+        images: Optional list of PIL Images to include as base64
+        time_taken: Optional processing time in seconds
     """
     try:
+        # Generate unique ID: flowtype-uuid
+        unique_id = f"{flow_type}-{str(uuid.uuid4())}"
+
+        # Convert images to base64 if provided
+        images_data = []
+        if images:
+            images_data = convert_images_to_base64(images)
+
         payload = {
+            "id": unique_id,
             "timestamp": datetime.now().isoformat(),
             "user": username,
             "flow_type": flow_type,
-            "results": result_data
+            "time_taken_seconds": round(time_taken, 2) if time_taken else None,
+            "results": result_data,
+            "images": images_data
         }
 
         response = requests.post(
             WEBHOOK_URL,
             json=payload,
-            timeout=10
+            timeout=30  # Increased timeout for larger payloads with images
         )
 
         if response.status_code == 200:
-            print(f"Webhook sent successfully for {flow_type} flow by {username}")
+            time_info = f", Time: {time_taken:.2f}s" if time_taken else ""
+            print(f"Webhook sent successfully for {flow_type} flow by {username} (ID: {unique_id}, Images: {len(images_data)}{time_info})")
         else:
             print(f"Webhook failed with status {response.status_code}: {response.text}")
 
@@ -857,8 +914,15 @@ def process_files_accident(individual_files, zip_file, request: gr.Request):
             error_msg = "No valid images found to process"
             return error_msg, None, 0
 
+        # Start timing
+        start_time = time.time()
+
         # Process with Gemini using accident flow
         result = processor.process_documents_with_gemini(all_images, flow_type="accident")
+
+        # Calculate processing time
+        end_time = time.time()
+        time_taken = end_time - start_time
 
         # Send webhook log
         try:
@@ -867,10 +931,10 @@ def process_files_accident(individual_files, zip_file, request: gr.Request):
             # Parse result to send as JSON
             try:
                 parsed_result = json.loads(result)
-                send_webhook_log("accident", username, parsed_result)
+                send_webhook_log("accident", username, parsed_result, all_images, time_taken)
             except:
                 # If result is not valid JSON, send as string
-                send_webhook_log("accident", username, {"raw_result": result})
+                send_webhook_log("accident", username, {"raw_result": result}, all_images, time_taken)
         except Exception as e:
             print(f"Error sending webhook in accident flow: {e}")
 
@@ -903,6 +967,9 @@ def process_files_windshield(individual_files, zip_file, request: gr.Request):
         if not all_images:
             error_msg = "No valid images found to process"
             return error_msg, "", "", error_msg, None, None, 0, "", 0, 0
+
+        # Start timing
+        start_time = time.time()
 
         # Process with Gemini using windshield flow
         result = processor.process_documents_with_gemini(all_images, flow_type="windshield")
@@ -938,11 +1005,15 @@ def process_files_windshield(individual_files, zip_file, request: gr.Request):
             except Exception as e:
                 print(f"Error processing damage location: {e}")
 
+        # Calculate processing time
+        end_time = time.time()
+        time_taken = end_time - start_time
+
         # Send webhook log
         try:
             # Get username from Gradio request context
             username = request.username if request and hasattr(request, 'username') else "unknown"
-            send_webhook_log("windshield", username, parsed_result)
+            send_webhook_log("windshield", username, parsed_result, all_images, time_taken)
         except Exception as e:
             print(f"Error sending webhook in windshield flow: {e}")
 
