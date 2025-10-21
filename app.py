@@ -11,12 +11,16 @@ import pdfplumber
 from google.genai import types, client
 from dotenv import load_dotenv
 from datetime import datetime
+import requests
 
 # Load environment variables
 load_dotenv()
 
 # Initialize Gemini client
 gemini_client = client.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Webhook URL for logging
+WEBHOOK_URL = "https://aiagentsedata.app.n8n.cloud/webhook/cd53b28a-8e1b-4f3e-8e76-44b066114c98"
 
 # Master prompt from the notebook
 MASTER_PROMPT = """
@@ -512,6 +516,38 @@ class DocumentProcessor:
 processor = DocumentProcessor()
 
 
+def send_webhook_log(flow_type: str, username: str, result_data: dict):
+    """
+    Send processing log to n8n webhook
+
+    Args:
+        flow_type: Either "windshield" or "accident"
+        username: The authenticated username
+        result_data: The complete JSON results from processing
+    """
+    try:
+        payload = {
+            "timestamp": datetime.now().isoformat(),
+            "user": username,
+            "flow_type": flow_type,
+            "results": result_data
+        }
+
+        response = requests.post(
+            WEBHOOK_URL,
+            json=payload,
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            print(f"Webhook sent successfully for {flow_type} flow by {username}")
+        else:
+            print(f"Webhook failed with status {response.status_code}: {response.text}")
+
+    except Exception as e:
+        print(f"Error sending webhook: {str(e)}")
+
+
 # Windshield claim processing functions
 def draw_bounding_box_on_image(image: Image.Image, box_coords: List[int]) -> Image.Image:
     """Draw bounding box on image using normalized coordinates"""
@@ -802,7 +838,7 @@ def create_validation_display(consistency_analysis: dict) -> str:
         return f"<p>Error creating validation display: {str(e)}</p>"
 
 
-def process_files_accident(individual_files, zip_file):
+def process_files_accident(individual_files, zip_file, request: gr.Request):
     """Processing function for accident claims"""
     try:
         all_images = []
@@ -824,6 +860,20 @@ def process_files_accident(individual_files, zip_file):
         # Process with Gemini using accident flow
         result = processor.process_documents_with_gemini(all_images, flow_type="accident")
 
+        # Send webhook log
+        try:
+            # Get username from Gradio request context
+            username = request.username if request and hasattr(request, 'username') else "unknown"
+            # Parse result to send as JSON
+            try:
+                parsed_result = json.loads(result)
+                send_webhook_log("accident", username, parsed_result)
+            except:
+                # If result is not valid JSON, send as string
+                send_webhook_log("accident", username, {"raw_result": result})
+        except Exception as e:
+            print(f"Error sending webhook in accident flow: {e}")
+
         return (
             result,                         # Complete JSON output
             all_images,                     # Image gallery
@@ -835,7 +885,7 @@ def process_files_accident(individual_files, zip_file):
         return error_msg, None, 0
 
 
-def process_files_windshield(individual_files, zip_file):
+def process_files_windshield(individual_files, zip_file, request: gr.Request):
     """Processing function for windshield claims"""
     try:
         all_images = []
@@ -887,6 +937,14 @@ def process_files_windshield(individual_files, zip_file):
                     damage_image = draw_bounding_box_on_image(all_images[image_index], box_coords)
             except Exception as e:
                 print(f"Error processing damage location: {e}")
+
+        # Send webhook log
+        try:
+            # Get username from Gradio request context
+            username = request.username if request and hasattr(request, 'username') else "unknown"
+            send_webhook_log("windshield", username, parsed_result)
+        except Exception as e:
+            print(f"Error sending webhook in windshield flow: {e}")
 
         return (
             checklist_html,          # Document checklist
